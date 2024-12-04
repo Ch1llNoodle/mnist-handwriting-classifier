@@ -48,10 +48,7 @@ y_train_tensor = torch.tensor(y_train, dtype=torch.long)
 # 数据增强
 transform = transforms.Compose([
     transforms.RandomRotation(15),  # 随机旋转角度
-    transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), shear=10),  # 仿射变换
-    transforms.RandomHorizontalFlip(),  # 随机水平翻转
     transforms.GaussianBlur(3),  # 高斯模糊
-    transforms.RandomErasing(),  # 随机擦除部分像素
     transforms.Normalize((0.5,), (0.5,))  # 归一化
 ])
 
