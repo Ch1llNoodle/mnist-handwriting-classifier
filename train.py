@@ -89,7 +89,7 @@ model = EnhancedCNNModel().to(device)
 # 定义损失函数和优化器
 criterion = nn.CrossEntropyLoss()  # 交叉熵损失函数
 optimizer = optim.Adam(model.parameters(), lr=0.0005)  # 使用较小的学习率
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)  # 学习率衰减
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5)  # 动态调整学习率
 
 # 早停法类
 class EarlyStopping:
@@ -144,7 +144,7 @@ for epoch in range(epochs):
     train_loss.append(epoch_loss)
     train_accuracy.append(epoch_accuracy)
 
-    scheduler.step()  # 更新学习率
+    scheduler.step(epoch_loss)  # 动态调整学习率
 
     print(f"Epoch [{epoch + 1}/{epochs}], Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy:.2f}%")
 
