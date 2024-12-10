@@ -16,6 +16,10 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 # 检查是否有可用的 GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# 全局参数
+PADDING = 4
+TARGET_SIZE = (28, 28)
+
 # 加载自定义测试集
 def load_custom_data(test_base_path):
     images, labels = [], []
@@ -25,53 +29,23 @@ def load_custom_data(test_base_path):
             for file_name in os.listdir(folder_path):
                 if file_name.endswith('.bmp'):
                     file_path = os.path.join(folder_path, file_name)
-                    img = Image.open(file_path).convert('L').resize((28, 28))
+                    img = Image.open(file_path).convert('L').resize(TARGET_SIZE)
                     images.append(np.array(img))
                     labels.append(int(folder_name))
     return (np.array(images), np.array(labels)) if images and labels else (None, None)
 
-# 预处理自定义测试集数据
-def preprocess_custom_data(x_custom, device):
-    preprocessed_images = []
-    padding = 4  # 定义边框宽度
-
-    for img in x_custom:
-        img = 255 - img  # 反转颜色（白底变黑底）
-        kernel = np.ones((2, 2), np.uint8)
-        thickened_img = cv2.dilate(img, kernel, iterations=1)
-
-        # 检测轮廓并裁剪数字区域
-        cropped_img = crop_digit(thickened_img, padding)
-
-        if cropped_img is not None:
-            # 调整大小为 28x28
-            resized_img = cv2.resize(cropped_img, (28, 28), interpolation=cv2.INTER_AREA)
-
-            # 归一化处理并调整形状
-            normalized_img = resized_img.astype('float32') / 255.0
-            preprocessed_images.append(normalized_img)
-
-    # 转换为 PyTorch 张量
-    if preprocessed_images:  # 确保列表不为空
-        return torch.tensor(np.array(preprocessed_images).reshape(len(x_custom), 1, 28, 28), device=device)
-    else:
-        return torch.tensor([], device=device)  # 返回一个空张量
-
 # 检测轮廓并裁剪数字区域
-def crop_digit(thickened_img, padding=4):
+def crop_digit(thickened_img, padding):
     contours, _ = cv2.findContours(thickened_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if contours:
         # 找到最大的轮廓（假设数字是最大的对象）
         contour = max(contours, key=cv2.contourArea)
         x, y, w, h = cv2.boundingRect(contour)
-
         # 计算正方形边长并添加边框
         side_length = max(w, h) + 2 * padding
-
         # 计算新的边界框中心
         x_center, y_center = x + w // 2, y + h // 2
-
         # 计算带边框的正方形裁剪区域
         x_start, y_start = max(0, x_center - side_length // 2), max(0, y_center - side_length // 2)
         x_end, y_end = min(thickened_img.shape[1], x_start + side_length), min(thickened_img.shape[0], y_start + side_length)
@@ -80,6 +54,34 @@ def crop_digit(thickened_img, padding=4):
         return cropped_img
     else:
         return None
+
+# 数字图像处理：裁剪、调整大小、归一化
+def process_digit_region(img, padding, target_size):
+    cropped_img = crop_digit(img, padding)
+    if cropped_img is not None:
+        # 调整大小并归一化
+        resized_img = cv2.resize(cropped_img, target_size, interpolation=cv2.INTER_AREA)
+        normalized_img = resized_img.astype('float32') / 255.0
+        return normalized_img
+    else:
+        return None
+
+# 预处理自定义测试集数据
+def preprocess_custom_data(x_custom, device):
+    preprocessed_images = []
+    kernel = np.ones((2, 2), np.uint8)  # 用于膨胀操作
+
+    for img in x_custom:
+        img = 255 - img  # 反转颜色（白底变黑底）
+        thickened_img = cv2.dilate(img, kernel, iterations=1)
+        processed_img = process_digit_region(thickened_img, padding=PADDING, target_size=TARGET_SIZE)
+        if processed_img is not None:
+            preprocessed_images.append(processed_img)
+
+    # 转换为 PyTorch 张量
+    if not preprocessed_images:  # 若为空直接返回
+        return torch.empty(0, 1, *TARGET_SIZE, device=device)
+    return torch.tensor(np.array(preprocessed_images).reshape(len(preprocessed_images), 1, *TARGET_SIZE), device=device)
 
 # 定义卷积神经网络（CNN）模型
 class CNNModel(nn.Module):
