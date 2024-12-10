@@ -32,8 +32,8 @@ def read_labels(filename):
         return labels
 
 # 加载和预处理MNIST数据集
-train_images_path = "C:\\Users\\lfq\\PycharmProjects\\MNIST\\train-images.idx3-ubyte"
-train_labels_path = "C:\\Users\\lfq\\PycharmProjects\\MNIST\\train-labels.idx1-ubyte"
+train_images_path = "D:\\GitHub\\mnist-handwriting-classifier\\train-images.idx3-ubyte"
+train_labels_path = "D:\\GitHub\\mnist-handwriting-classifier\\train-labels.idx1-ubyte"
 
 x_train = read_images(train_images_path)
 y_train = read_labels(train_labels_path)
@@ -90,21 +90,35 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)  # 学
 
 # 早停法类
 class EarlyStopping:
-    def __init__(self, patience=5, delta=0):
-        # 初始化早停法参数
+    def __init__(self, patience=5, delta=0, smoothing=False):
         self.patience = patience
         self.delta = delta
-        self.best_loss = np.inf
+        self.smoothing = smoothing
+        self.best_loss = float('inf')
         self.counter = 0
         self.early_stop = False
+        self.avg_loss = None  # 滑动平均值（仅在启用平滑时使用）
 
     def __call__(self, val_loss):
-        # 早停法逻辑
-        if val_loss < self.best_loss - self.delta:
-            self.best_loss = val_loss
+        # 平滑损失计算
+        if self.smoothing:
+            self.avg_loss = (
+                0.8 * self.avg_loss + 0.2 * val_loss if self.avg_loss is not None else val_loss
+            )
+            current_loss = self.avg_loss
+        else:
+            current_loss = val_loss
+
+        # 判断是否有改进
+        if current_loss < self.best_loss - self.delta:
+            print(f"验证损失从 {self.best_loss:.4f} 降低到 {current_loss:.4f}，计数器重置。")
+            self.best_loss = current_loss
             self.counter = 0
-        elif val_loss >= self.best_loss - self.delta:
+        else:
             self.counter += 1
+            print(f"验证损失未改进。计数器：{self.counter}/{self.patience}")
+
+            # 检查是否需要触发早停
             if self.counter >= self.patience:
                 self.early_stop = True
 
@@ -112,11 +126,11 @@ class EarlyStopping:
 epochs = 50
 train_loss = []
 train_accuracy = []
-early_stopping = EarlyStopping(patience=5, delta=0.001)
+# 初始化早停逻辑
+early_stopping = EarlyStopping(patience=5, delta=0.001, smoothing=True)
 
 for epoch in range(epochs):
-    # 训练过程
-    model.train()  # 设置为训练模式
+    model.train()
     running_loss = 0.0
     correct = 0
     total = 0
@@ -141,13 +155,13 @@ for epoch in range(epochs):
     train_loss.append(epoch_loss)
     train_accuracy.append(epoch_accuracy)
 
-    scheduler.step()  # 更新学习率
-
+    scheduler.step()  # 仅更新学习率
     print(f"Epoch [{epoch + 1}/{epochs}], Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy:.2f}%")
 
+    # 调用早停逻辑
     early_stopping(epoch_loss)
     if early_stopping.early_stop:
-        print("早停法触发，停止训练")
+        print(f"触发早停，在第 {epoch + 1} 轮停止训练。")
         break
 
 # 可视化训练过程中的准确率和损失
