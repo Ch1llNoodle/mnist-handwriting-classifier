@@ -67,10 +67,31 @@ model = MLP().to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
+class EarlyStopping:
+    def __init__(self, patience=5, delta=0.001):
+        self.patience = patience
+        self.delta = delta
+        self.best_loss = None
+        self.counter = 0
+        self.early_stop = False
+
+    def __call__(self, current_loss):
+        if self.best_loss is None:
+            self.best_loss = current_loss
+        elif current_loss > self.best_loss - self.delta:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_loss = current_loss
+            self.counter = 0
+
 # 训练模型
-epochs = 10
+epochs = 50
 train_loss = []
 train_accuracy = []
+# 初始化早停对象
+early_stopping = EarlyStopping(patience=5, delta=0.001)
 
 for epoch in range(epochs):
     model.train()
@@ -79,24 +100,32 @@ for epoch in range(epochs):
     total = 0
 
     for inputs, labels in train_loader:
-        inputs, labels = inputs.to(device), labels.to(device)  # 数据迁移到 GPU
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, torch.max(labels, 1)[1])
-        loss.backward()
-        optimizer.step()
+        # 将数据转移到GPU
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        optimizer.zero_grad()  # 梯度清零
+        outputs = model(inputs)  # 前向传播
+        loss = criterion(outputs, labels)  # 计算损失
+        loss.backward()  # 反向传播
+        optimizer.step()  # 更新权重
 
         running_loss += loss.item() * inputs.size(0)
         _, predicted = torch.max(outputs, 1)
         total += labels.size(0)
-        correct += (predicted == torch.max(labels, 1)[1]).sum().item()
+        correct += (predicted == labels.argmax(dim=1)).sum().item()
 
     epoch_loss = running_loss / len(train_loader.dataset)
     epoch_accuracy = 100 * correct / total
     train_loss.append(epoch_loss)
     train_accuracy.append(epoch_accuracy)
 
-    print(f"Epoch [{epoch+1}/{epochs}], Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy:.2f}%")
+    print(f"Epoch [{epoch + 1}/{epochs}], Loss: {epoch_loss:.4f}, Accuracy: {epoch_accuracy:.2f}%")
+
+    # 调用早停逻辑
+    early_stopping(epoch_loss)
+    if early_stopping.early_stop:
+        print(f"触发早停，在第 {epoch + 1} 轮停止训练。")
+        break
 
 # 可视化训练过程中的准确率和损失
 plt.plot(range(len(train_accuracy)), train_accuracy, label='训练准确率')
